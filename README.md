@@ -2,154 +2,156 @@
 
 **CTK Technologies**
 
-USB cihazlarını ağ üzerinden paylaşmak için Windows tabanlı server-client
-uygulaması. Bir bilgisayara bağlı USB cihazları aynı yerel ağdaki başka
-bilgisayarlardan sanki yerel olarak bağlıymış gibi erişilebilir.
+A Windows server-client application for sharing USB devices over a network.
+USB devices plugged into one computer can be accessed from other machines on
+the same local network as if they were connected locally.
 
-## Özellikler
+## Features
 
-- Saf C (C99) - Harici bağımlılık yok
-- Windows 10/11 desteği
-- USB/IP protokolü (TCP 3240, UDP 3241)
-- GUI ve CLI arayüzü
-- Çoklu client desteği
-- Ağ keşif özelliği (UDP broadcast)
-- Tray icon desteği
-- Opsiyonel preshared-token kimlik doğrulama (LAN erişim kontrolü)
+- Pure C (C99) — no external dependencies
+- Windows 10/11 support
+- USB/IP protocol (TCP 3240, UDP 3241)
+- Both GUI and CLI interfaces
+- Multi-client support
+- Network discovery via UDP broadcast
+- System tray icon
+- Optional preshared-token authentication (LAN access control)
 
-## Önemli: Client tarafı VHCI sürücüsü gerektirir
+## Important: The client side requires a VHCI driver
 
-Uzak USB cihazını Windows'ta gerçek bir cihaz olarak göstermek için
-**kernel-mode VHCI sürücüsü** gerekir. Bu sürücü bu depoya dahil değildir.
+To expose a remote USB device as a real device on Windows, a
+**kernel-mode VHCI driver** is required. This driver is **not** included in
+this repository.
 
-- Sürücüyü `usbip-win` projesinden yükleyin: <https://github.com/cezanne/usb-ip-win>
-- Sürücü yüklü değilse `usb-client.exe attach` komutu `ERR_VHCI_NOT_FOUND`
-  hatasıyla başarısız olur; cihaz yalnızca yazılımsal olarak takip edilir,
-  işletim sistemine tanıtılmaz.
-- Sürücü yüklüyse client, `usbip-win` IOCTL'leri ile cihazı gerçekten plug
-  eder ve URB yönlendirme kernel-mode'da sürücü tarafından yapılır.
+- Install the driver from the `usbip-win` project: <https://github.com/cezanne/usb-ip-win>
+- Without the driver, the `usb-client.exe attach` command fails with
+  `ERR_VHCI_NOT_FOUND`; the device is only tracked in software and is never
+  presented to the operating system.
+- With the driver installed, the client actually plugs the device via the
+  `usbip-win` IOCTLs, and URB forwarding happens in kernel mode.
 
-## Gereksinimler
+## Requirements
 
-### Derleme
-- MinGW-w64 (GCC) veya Visual Studio 2019/2022
+### Build
+- MinGW-w64 (GCC) or Visual Studio 2019/2022
 - Windows SDK
 
-### Çalıştırma
-- Windows 10 veya Windows 11
-- Yönetici hakları (USB cihazlarına erişim için)
-- Firewall'da TCP 3240 ve UDP 3241 portları açık olmalı
-- Client tarafında VHCI sürücüsü (yukarıya bakın)
+### Runtime
+- Windows 10 or Windows 11
+- Administrator privileges (to access USB devices)
+- TCP 3240 and UDP 3241 open in the firewall
+- A VHCI driver on the client side (see above)
 
-## Derleme
+## Build
 
-### MinGW ile (Önerilen)
+### MinGW (recommended)
 
 ```cmd
 build_mingw.bat gui
 ```
 
-### Visual Studio ile
+### Visual Studio
 
 ```cmd
 build_win32.bat
 ```
 
-### Testler
+### Tests
 
 ```cmd
 nmake -f Makefile test
 bin\test_protocol.exe
 ```
 
-Çıktılar `bin/` klasöründe oluşur:
+Build outputs land in the `bin/` folder:
 
-| Dosya | Açıklama |
-|-------|----------|
+| File | Description |
+|------|-------------|
 | `usb-server-gui.exe` | Server (GUI) |
 | `usb-client-gui.exe` | Client (GUI) |
 | `usb-server.exe` | Server (CLI) |
 | `usb-client.exe` | Client (CLI) |
-| `test_protocol.exe` | Protokol serileştirme testleri |
+| `test_protocol.exe` | Protocol serialization tests |
 
-## Kullanım
+## Usage
 
 ### GUI
 
-1. **Server:** `usb-server-gui.exe` çalıştırın. USB cihazları otomatik listelenir.
-   Paylaşmak istediğiniz cihazın checkbox'ını işaretleyin.
-2. **Client:** `usb-client-gui.exe` çalıştırın. Server IP adresini girin ve
-   "Connect" butonuna tıklayın.
+1. **Server:** run `usb-server-gui.exe`. USB devices are listed automatically.
+   Tick the checkbox next to each device you want to share.
+2. **Client:** run `usb-client-gui.exe`. Enter the server IP address and click
+   "Connect".
 
 ### CLI
 
 ```cmd
-# Server - cihazları listele
+# Server - list devices
 usb-server.exe -l
 
-# Server - paylaşımı başlat
+# Server - start sharing
 usb-server.exe
 
-# Server - auth token ile başlat
+# Server - start with an auth token
 set USBIP_AUTH_TOKEN=secret123
 usb-server.exe
 
-# Client - sunucu keşfet
+# Client - discover servers
 usb-client.exe discover
 
-# Client - cihazları listele
+# Client - list devices
 usb-client.exe list 192.168.1.100
 
-# Client - cihaz bağla
+# Client - attach a device
 usb-client.exe attach 192.168.1.100 1-2
 
-# Client - cihaz ayır
+# Client - detach a device
 usb-client.exe detach 0
 ```
 
-### Kimlik Doğrulama
+### Authentication
 
-Server boş olmayan bir `USBIP_AUTH_TOKEN` ortam değişkeni (veya `-k`/`--auth-token`
-parametresi) ile başlatılırsa, her clientin bağlantıdan hemen sonra aynı token'ı
-göndermesi gerekir. Client aynı şekilde `USBIP_AUTH_TOKEN` ile token alır.
+If the server is started with a non-empty `USBIP_AUTH_TOKEN` environment
+variable (or the `-k` / `--auth-token` argument), every client must send the
+same token immediately after connecting. The client obtains its token the same
+way (`USBIP_AUTH_TOKEN` env var or `-k` flag).
 
-> **Not:** Bu iletişim şifrelenmemiştir (TLS yok). Token, güvenmediğiniz bir
-> ağda dinlenerek ele geçebilir. Yalnızca güvendiğiniz LAN'larda kullanın.
+> **Note:** traffic is **not** encrypted (no TLS). The token can be sniffed on
+> an untrusted network. Only use this on LANs you trust.
 
-## Dizin Yapısı
+## Directory Structure
 
 ```
 usb-over-network/
-├── common/             # Ortak modüller
-│   ├── config.h        # Yapılandırma sabitleri
-│   ├── types.h         # Platform tipleri
-│   ├── usb_defs.h      # USB tanımları
-│   ├── error.c/h       # Hata yönetimi
-│   ├── log.c/h         # Log sistemi
-│   ├── auth.c/h        # Token kimlik doğrulama
-│   ├── network.h       # Ağ arayüzü
-│   ├── network_win32.c # Winsock implementasyonu
-│   └── protocol.c/h    # USB/IP protokol yapıları
-├── server/             # Server bileşenleri
-├── client/             # Client bileşenleri
-├── gui/                # GUI bileşenleri
-├── tests/              # Birim testleri
+├── common/             # Shared modules
+│   ├── config.h        # Configuration constants
+│   ├── types.h         # Platform types
+│   ├── usb_defs.h      # USB definitions
+│   ├── error.c/h       # Error handling
+│   ├── log.c/h         # Logging system
+│   ├── auth.c/h        # Token authentication
+│   ├── network.h       # Network interface
+│   ├── network_win32.c # Winsock implementation
+│   └── protocol.c/h    # USB/IP protocol structures
+├── server/             # Server components
+├── client/             # Client components
+├── gui/                # GUI components
+├── tests/              # Unit tests
 ├── .github/workflows/  # CI
 ├── Makefile            # nmake Makefile
 └── README.md
 ```
 
-## Protokol
+## Protocol
 
-USB/IP protokolü (Linux kernel standardı ile uyumlu):
+USB/IP protocol (compatible with the Linux kernel standard):
 
-- **TCP Port:** 3240
-- **UDP Port:** 3241 (keşif)
-- **Byte Order:** Big-endian (network byte order)
+- **TCP port:** 3240
+- **UDP port:** 3241 (discovery)
+- **Byte order:** big-endian (network byte order)
 - **Version:** 0x0111
 
-## Lisans
+## License
 
-MIT License - ayrıntılar için [LICENSE](LICENSE) dosyasına bakın.
+MIT License — see the [LICENSE](LICENSE) file for details.
 
 Copyright (c) 2025 CTK Technologies.
