@@ -4,6 +4,9 @@ bin/*.exe
 bin/*.o
 bin/*.res
 
+# Release packaging (built locally, published as GitHub releases)
+dist/
+
 # IDE / Editor
 .vs/
 .vscode/
