@@ -33,6 +33,10 @@ static error_code_t queue_init(urb_queue_t *queue) {
     if (mutex_init(&queue->mutex) != 0) {
         return ERR_MUTEX_INIT;
     }
+    if (event_init(&queue->notify) != 0) {
+        mutex_destroy(&queue->mutex);
+        return ERR_THREAD_CREATE;
+    }
     return ERR_SUCCESS;
 }
 
@@ -51,6 +55,7 @@ static void queue_cleanup(urb_queue_t *queue) {
     queue->count = 0;
 
     mutex_unlock(&queue->mutex);
+    event_destroy(&queue->notify);
     mutex_destroy(&queue->mutex);
 }
 
@@ -67,6 +72,8 @@ static void queue_push(urb_queue_t *queue, urb_entry_t *entry) {
     queue->count++;
 
     mutex_unlock(&queue->mutex);
+    /* Wake one waiter; auto-reset event drops the signal if none is parked. */
+    event_signal(&queue->notify);
 }
 
 static urb_entry_t* queue_pop(urb_queue_t *queue) {
@@ -123,12 +130,16 @@ static DWORD WINAPI urb_worker_thread(LPVOID param) {
     LOG_DEBUG("URB worker thread started");
 
     while (handler->running) {
-        /* Get next pending URB */
+        /* Try a non-blocking pop first; common case skips the wait. */
         urb_entry_t *entry = queue_pop(&handler->pending);
 
         if (entry == NULL) {
-            /* No pending URBs, wait a bit */
-            Sleep(1);
+            /* Park on the auto-reset event. A 100ms watchdog lets us observe
+             * handler->running going false even if a signal is missed; this
+             * avoids the previous busy-loop (Sleep(1) consumed a full core). */
+            if (event_wait_timeout(&handler->pending.notify, 100) == WAIT_FAILED) {
+                break;
+            }
             continue;
         }
 
@@ -338,6 +349,8 @@ void urb_handler_stop(urb_handler_t *handler) {
     }
 
     handler->running = false;
+    /* Nudge the worker off its event wait so it observes the flag and exits. */
+    event_signal(&handler->pending.notify);
 
     /* Wait for worker thread to finish */
     thread_join(handler->worker_thread);

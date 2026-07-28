@@ -7,9 +7,18 @@
 #include "../common/network.h"
 #include "../common/log.h"
 #include "../common/config.h"
+#include "../common/auth.h"
+#include "../common/string_utils.h"
 #include <string.h>
 
 /* ----- Helper Functions ----- */
+
+/* Preshared token sent immediately after TCP connect. NULL/empty = disabled. */
+static const char *g_auth_token = NULL;
+
+void remote_device_set_token(const char *token) {
+    g_auth_token = token;
+}
 
 static remote_device_t* create_remote_device(void) {
     remote_device_t *device = (remote_device_t *)calloc(1, sizeof(remote_device_t));
@@ -89,9 +98,9 @@ error_code_t remote_device_connect(remote_device_list_t *list, vhci_context_t *v
         return ERR_OUT_OF_MEMORY;
     }
 
-    strncpy(device->server_ip, server_ip, sizeof(device->server_ip) - 1);
+    str_copy(device->server_ip, server_ip, sizeof(device->server_ip));
     device->server_port = server_port;
-    strncpy(device->busid, busid, sizeof(device->busid) - 1);
+    str_copy(device->busid, busid, sizeof(device->busid));
     device->vhci = vhci;
     device->state = REMOTE_DEV_STATE_CONNECTING;
 
@@ -101,6 +110,17 @@ error_code_t remote_device_connect(remote_device_list_t *list, vhci_context_t *v
         LOG_ERROR("Failed to connect to server %s:%u", server_ip, server_port);
         free_remote_device(device);
         return ERR_SOCKET_CONNECT;
+    }
+
+    /* Present preshared token before USB/IP traffic (no-op if disabled). */
+    if (auth_is_enabled(g_auth_token)) {
+        error_code_t auth_err = auth_client_handshake(device->socket, g_auth_token);
+        if (auth_err != ERR_SUCCESS) {
+            LOG_ERROR("Auth handshake rejected by %s:%u", server_ip, server_port);
+            socket_close(device->socket);
+            free_remote_device(device);
+            return auth_err;
+        }
     }
 
     /* Send import request */
@@ -398,6 +418,16 @@ error_code_t remote_server_list_devices(const char *server_ip, uint16_t server_p
     if (!socket_is_valid(sock)) {
         LOG_ERROR("Failed to connect to server %s:%u", server_ip, server_port);
         return ERR_SOCKET_CONNECT;
+    }
+
+    /* Present preshared token before USB/IP traffic (no-op if disabled). */
+    if (auth_is_enabled(g_auth_token)) {
+        error_code_t auth_err = auth_client_handshake(sock, g_auth_token);
+        if (auth_err != ERR_SUCCESS) {
+            LOG_ERROR("Auth handshake rejected by %s:%u", server_ip, server_port);
+            socket_close(sock);
+            return auth_err;
+        }
     }
 
     /* Send device list request */

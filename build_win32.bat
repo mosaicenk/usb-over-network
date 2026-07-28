@@ -23,9 +23,9 @@ if errorlevel 1 (
 REM Configuration
 set CC=cl
 set RC=rc
-set CFLAGS=/nologo /W4 /O2 /D_CRT_SECURE_NO_WARNINGS /DWIN32_LEAN_AND_MEAN
-set LDFLAGS=/link ws2_32.lib setupapi.lib winusb.lib
-set GUI_LDFLAGS=/link ws2_32.lib setupapi.lib winusb.lib user32.lib gdi32.lib comctl32.lib shell32.lib
+set CFLAGS=/nologo /W4 /WX /O2 /D_CRT_SECURE_NO_WARNINGS /DWIN32_LEAN_AND_MEAN
+set LDFLAGS=/link ws2_32.lib iphlpapi.lib setupapi.lib winusb.lib
+set GUI_LDFLAGS=/link ws2_32.lib iphlpapi.lib setupapi.lib winusb.lib user32.lib gdi32.lib comctl32.lib shell32.lib
 
 REM Source directories
 set COMMON_DIR=common
@@ -37,7 +37,7 @@ REM Output directory
 if not exist "bin" mkdir bin
 
 REM Common source files
-set COMMON_SRC=%COMMON_DIR%\error.c %COMMON_DIR%\log.c %COMMON_DIR%\network_win32.c %COMMON_DIR%\protocol.c
+set COMMON_SRC=%COMMON_DIR%\error.c %COMMON_DIR%\log.c %COMMON_DIR%\auth.c %COMMON_DIR%\network_win32.c %COMMON_DIR%\protocol.c
 
 REM Server source files (without main.c for GUI)
 set SERVER_CORE=%SERVER_DIR%\usb_host_win32.c %SERVER_DIR%\device_list.c %SERVER_DIR%\urb_handler.c %SERVER_DIR%\client_manager.c

@@ -6,6 +6,7 @@
 #include "network.h"
 #include "log.h"
 #include <mstcpip.h>
+#include <iphlpapi.h>
 
 /* Global state */
 static struct {
@@ -793,61 +794,147 @@ bool socket_has_error(socket_set_t *set, socket_t fd) {
 }
 
 /*
- * Resolve hostname
+ * Resolve hostname to IP address (first AF_INET result).
+ *
+ * Uses getaddrinfo (Vista+) instead of the deprecated gethostbyname, which
+ * cannot resolve IPv6/literal addresses and is not reentrant.
  */
 error_code_t resolve_hostname(const char *hostname, char *ip_addr, size_t ip_len) {
-    struct hostent *he = gethostbyname(hostname);
-    if (he == NULL) {
+    struct addrinfo hints;
+    struct addrinfo *res = NULL;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+
+    int rc = getaddrinfo(hostname, NULL, &hints, &res);
+    if (rc != 0 || res == NULL) {
         return ERR_HOST_NOT_FOUND;
     }
 
-    struct in_addr addr;
-    memcpy(&addr, he->h_addr_list[0], he->h_length);
-    strncpy(ip_addr, inet_ntoa(addr), ip_len - 1);
-    ip_addr[ip_len - 1] = '\0';
+    struct sockaddr_in *sa = (struct sockaddr_in *)res->ai_addr;
+    if (inet_ntop(AF_INET, &sa->sin_addr, ip_addr, (socklen_t)ip_len) == NULL) {
+        freeaddrinfo(res);
+        return ERR_GENERAL;
+    }
 
+    freeaddrinfo(res);
     return ERR_SUCCESS;
 }
 
 /*
- * Get broadcast address
+ * Pick a subnet-directed broadcast address for the first up, non-loopback
+ * IPv4 interface. Falls back to limited broadcast (255.255.255.255) which
+ * most home routers will relay.
  */
 error_code_t get_broadcast_address(char *broadcast_addr, size_t addr_len) {
-    /* Simple approach: use 255.255.255.255 for broadcast */
+    ULONG buf_len = 16 * 1024;
+    ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
+                  GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_FRIENDLY_NAME;
+   PIP_ADAPTER_ADDRESSES adapters = (PIP_ADAPTER_ADDRESSES)malloc(buf_len);
+    if (adapters == NULL) {
+        strncpy(broadcast_addr, "255.255.255.255", addr_len - 1);
+        broadcast_addr[addr_len - 1] = '\0';
+        return ERR_SUCCESS;
+    }
+
+    DWORD rc = GetAdaptersAddresses(AF_INET, flags, NULL, adapters, &buf_len);
+    if (rc == ERROR_BUFFER_OVERFLOW) {
+        free(adapters);
+        adapters = (PIP_ADAPTER_ADDRESSES)malloc(buf_len);
+        if (adapters == NULL) {
+            strncpy(broadcast_addr, "255.255.255.255", addr_len - 1);
+            broadcast_addr[addr_len - 1] = '\0';
+            return ERR_SUCCESS;
+        }
+        rc = GetAdaptersAddresses(AF_INET, flags, NULL, adapters, &buf_len);
+    }
+
+    if (rc != NO_ERROR) {
+        free(adapters);
+        strncpy(broadcast_addr, "255.255.255.255", addr_len - 1);
+        broadcast_addr[addr_len - 1] = '\0';
+        return ERR_SUCCESS;
+    }
+
+    for (PIP_ADAPTER_ADDRESSES a = adapters; a != NULL; a = a->Next) {
+        if (a->OperStatus != IfOperStatusUp ||
+            a->IfType == IF_TYPE_SOFTWARE_LOOPBACK) {
+            continue;
+        }
+        for (PIP_ADAPTER_UNICAST_ADDRESS u = a->FirstUnicastAddress; u != NULL; u = u->Next) {
+            struct sockaddr_in *sa = (struct sockaddr_in *)u->Address.lpSockaddr;
+            ULONG mask = 0;
+            if (u->OnLinkPrefixLength < 32) {
+                mask = htonl(~((1UL << (32 - u->OnLinkPrefixLength)) - 1));
+            } else {
+                mask = 0xFFFFFFFFu;
+            }
+            uint32_t bcast = (sa->sin_addr.s_addr & mask) | ~mask;
+            struct in_addr baddr;
+            baddr.s_addr = bcast;
+            if (inet_ntop(AF_INET, &baddr, broadcast_addr, (socklen_t)addr_len) != NULL) {
+                free(adapters);
+                return ERR_SUCCESS;
+            }
+        }
+    }
+
+    free(adapters);
     strncpy(broadcast_addr, "255.255.255.255", addr_len - 1);
     broadcast_addr[addr_len - 1] = '\0';
     return ERR_SUCCESS;
 }
 
 /*
- * Get local IP address
+ * Get local IP address (first up, non-loopback IPv4 interface).
  */
 error_code_t get_local_ip(char *ip_addr, size_t ip_len) {
-    char hostname[256];
-
-    if (gethostname(hostname, sizeof(hostname)) == SOCKET_ERROR) {
-        return ERR_GENERAL;
+    ULONG buf_len = 16 * 1024;
+    ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
+                  GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_FRIENDLY_NAME;
+    PIP_ADAPTER_ADDRESSES adapters = (PIP_ADAPTER_ADDRESSES)malloc(buf_len);
+    if (adapters == NULL) {
+        return ERR_OUT_OF_MEMORY;
     }
 
-    struct hostent *he = gethostbyname(hostname);
-    if (he == NULL) {
+    DWORD rc = GetAdaptersAddresses(AF_INET, flags, NULL, adapters, &buf_len);
+    if (rc == ERROR_BUFFER_OVERFLOW) {
+        free(adapters);
+        adapters = (PIP_ADAPTER_ADDRESSES)malloc(buf_len);
+        if (adapters == NULL) return ERR_OUT_OF_MEMORY;
+        rc = GetAdaptersAddresses(AF_INET, flags, NULL, adapters, &buf_len);
+    }
+    if (rc != NO_ERROR) {
+        free(adapters);
         return ERR_HOST_NOT_FOUND;
     }
 
-    struct in_addr addr;
-    memcpy(&addr, he->h_addr_list[0], he->h_length);
-    strncpy(ip_addr, inet_ntoa(addr), ip_len - 1);
-    ip_addr[ip_len - 1] = '\0';
+    for (PIP_ADAPTER_ADDRESSES a = adapters; a != NULL; a = a->Next) {
+        if (a->OperStatus != IfOperStatusUp ||
+            a->IfType == IF_TYPE_SOFTWARE_LOOPBACK) {
+            continue;
+        }
+        for (PIP_ADAPTER_UNICAST_ADDRESS u = a->FirstUnicastAddress; u != NULL; u = u->Next) {
+            struct sockaddr_in *sa = (struct sockaddr_in *)u->Address.lpSockaddr;
+            if (inet_ntop(AF_INET, &sa->sin_addr, ip_addr, (socklen_t)ip_len) != NULL) {
+                free(adapters);
+                return ERR_SUCCESS;
+            }
+        }
+    }
 
-    return ERR_SUCCESS;
+    free(adapters);
+    return ERR_HOST_NOT_FOUND;
 }
 
 /*
- * Validate IP address
+ * Validate dotted-quad IPv4 string. inet_addr treats 255.255.255.255 as the
+ * INADDR_NONE sentinel, so it cannot be used to validate. inet_pton has no
+ * such ambiguity and also rejects malformed input (leading zeros, etc.).
  */
 bool is_valid_ip(const char *ip_str) {
     struct in_addr addr;
-    return inet_addr(ip_str) != INADDR_NONE || strcmp(ip_str, "255.255.255.255") == 0;
+    return ip_str != NULL && inet_pton(AF_INET, ip_str, &addr) == 1;
 }
 
 /*

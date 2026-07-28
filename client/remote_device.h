@@ -73,6 +73,10 @@ error_code_t remote_device_list_init(remote_device_list_t *list);
 /* Cleanup remote device list */
 void remote_device_list_cleanup(remote_device_list_t *list);
 
+/* Set the preshared auth token sent on every new server connection.
+ * NULL or empty disables auth. Pointer must outlive the module's use. */
+void remote_device_set_token(const char *token);
+
 /* ----- Device Operations ----- */
 
 /* Connect to remote device */

@@ -16,6 +16,8 @@
 #include "../common/log.h"
 #include "../common/network.h"
 #include "../common/protocol.h"
+#include "../common/auth.h"
+#include "../common/string_utils.h"
 #include "usb_host.h"
 #include "device_list.h"
 #include "client_manager.h"
@@ -30,6 +32,7 @@ static struct {
     uint16_t port;
     char bind_address[64];
     char device_filter[USBIP_BUSID_MAX];
+    const char *auth_token;
     bool verbose;
     bool list_only;
 } g_server = {
@@ -38,6 +41,7 @@ static struct {
     .port = USBIP_PORT,
     .bind_address = "0.0.0.0",
     .device_filter = "",
+    .auth_token = NULL,
     .verbose = false,
     .list_only = false
 };
@@ -64,6 +68,8 @@ static void print_usage(const char *prog_name) {
     printf("  -p, --port PORT       Listen port (default: %d)\n", USBIP_PORT);
     printf("  -b, --bind ADDR       Bind address (default: 0.0.0.0)\n");
     printf("  -d, --device BUSID    Share only specific device\n");
+    printf("  -k, --auth-token T    Preshared token clients must present\n");
+    printf("                        (default: $USBIP_AUTH_TOKEN env, empty=off)\n");
     printf("  -l, --list            List available USB devices and exit\n");
     printf("  -v, --verbose         Verbose output\n");
     printf("  -h, --help            Show this help\n");
@@ -89,10 +95,13 @@ static int parse_args(int argc, char *argv[]) {
             g_server.port = (uint16_t)atoi(argv[++i]);
         }
         else if ((strcmp(argv[i], "-b") == 0 || strcmp(argv[i], "--bind") == 0) && i + 1 < argc) {
-            strncpy(g_server.bind_address, argv[++i], sizeof(g_server.bind_address) - 1);
+            str_copy(g_server.bind_address, argv[++i], sizeof(g_server.bind_address));
         }
         else if ((strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--device") == 0) && i + 1 < argc) {
-            strncpy(g_server.device_filter, argv[++i], sizeof(g_server.device_filter) - 1);
+            str_copy(g_server.device_filter, argv[++i], sizeof(g_server.device_filter));
+        }
+        else if ((strcmp(argv[i], "-k") == 0 || strcmp(argv[i], "--auth-token") == 0) && i + 1 < argc) {
+            g_server.auth_token = argv[++i];
         }
         else {
             fprintf(stderr, "Unknown option: %s\n", argv[i]);
@@ -240,6 +249,18 @@ static error_code_t server_main_loop(void) {
             continue;
         }
 
+        /* Authenticate before any USB/IP traffic. With auth disabled this is
+         * a no-op, preserving interop with plain USB/IP clients. */
+        if (auth_is_enabled(g_server.auth_token)) {
+            error_code_t auth_err = auth_server_handshake(client_socket, g_server.auth_token);
+            if (auth_err != ERR_SUCCESS) {
+                LOG_WARN("Rejecting %s:%u - auth failed (%s)",
+                    client_ip, client_port, error_string(auth_err));
+                socket_close(client_socket);
+                continue;
+            }
+        }
+
         /* Add new client */
         client_connection_t *client = NULL;
         error_code_t err = client_manager_add(&g_server.client_manager,
@@ -345,6 +366,14 @@ static error_code_t server_init(void) {
 
     g_server.running = true;
     LOG_INFO("Server initialized successfully");
+
+    /* Resolve auth token: explicit -k > USBIP_AUTH_TOKEN env > default (off). */
+    g_server.auth_token = auth_get_token(g_server.auth_token);
+    if (auth_is_enabled(g_server.auth_token)) {
+        LOG_INFO("Authentication enabled (preshared token)");
+    } else {
+        LOG_WARN("Authentication disabled - any LAN host can attach devices");
+    }
 
     return ERR_SUCCESS;
 }

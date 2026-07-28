@@ -49,6 +49,15 @@
 #define MAX_CONNECT_RETRIES         3
 #define RETRY_DELAY_MS              1000
 
+/* Authentication (optional preshared token, sent before USB/IP ops) */
+#define AUTH_TOKEN_MAX_LEN          64
+#define AUTH_TIMEOUT_MS             5000
+/* If non-empty, clients must present this token to use the server. */
+#define DEFAULT_AUTH_TOKEN          ""
+/* 4-byte magic + 1-byte length prefix, no NUL terminator on the wire. */
+#define AUTH_WIRE_MAGIC             0x55424F4Eu   /* "UBON" */
+#define AUTH_WIRE_HEADER_LEN        5u
+
 /* Log Configuration */
 #define LOG_BUFFER_SIZE             1024
 #define LOG_FILE_MAX_SIZE           (10 * 1024 * 1024)  /* 10MB */

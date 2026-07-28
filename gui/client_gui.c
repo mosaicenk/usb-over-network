@@ -9,6 +9,8 @@
 #include "../common/config.h"
 #include "../common/protocol.h"
 #include "../common/usb_defs.h"
+#include "../common/auth.h"
+#include "../common/string_utils.h"
 #include <stdio.h>
 
 /* Global context pointer for window procedure */
@@ -90,6 +92,15 @@ static void create_client_controls(client_gui_context_t *ctx) {
 
     y += BUTTON_HEIGHT + MARGIN;
 
+    /* Token row (optional preshared auth; leave blank for no-auth servers) */
+    ctx->hLabelToken = gui_create_label(hWnd, IDC_CLIENT_LABEL_TOKEN,
+        L"Token:", MARGIN, y + 4, 50, LABEL_HEIGHT);
+    ctx->hEditToken = gui_create_edit(hWnd, IDC_CLIENT_EDIT_TOKEN,
+        MARGIN + 55, y, editWidth, EDIT_HEIGHT);
+    SendMessage(ctx->hEditToken, EM_SETPASSWORDCHAR, L'*', 0);
+
+    y += EDIT_HEIGHT + MARGIN;
+
     /* Device list label */
     ctx->hLabelDevices = gui_create_label(hWnd, 0,
         L"Remote Devices:", MARGIN, y, 200, LABEL_HEIGHT);
@@ -116,6 +127,8 @@ static void create_client_controls(client_gui_context_t *ctx) {
     /* Apply font */
     SendMessage(ctx->hLabelServer, WM_SETFONT, (WPARAM)ctx->base.hFont, TRUE);
     SendMessage(ctx->hEditServer, WM_SETFONT, (WPARAM)ctx->base.hFont, TRUE);
+    SendMessage(ctx->hLabelToken, WM_SETFONT, (WPARAM)ctx->base.hFont, TRUE);
+    SendMessage(ctx->hEditToken, WM_SETFONT, (WPARAM)ctx->base.hFont, TRUE);
     SendMessage(ctx->hBtnDiscover, WM_SETFONT, (WPARAM)ctx->base.hFont, TRUE);
     SendMessage(ctx->hBtnConnect, WM_SETFONT, (WPARAM)ctx->base.hFont, TRUE);
     SendMessage(ctx->hLabelDevices, WM_SETFONT, (WPARAM)ctx->base.hFont, TRUE);
@@ -257,6 +270,10 @@ static void on_connect_clicked(client_gui_context_t *ctx) {
             gui_show_error(ctx->base.hMainWnd, L"Please enter server IP address");
             return;
         }
+        /* Read optional auth token and forward to the remote_device module. */
+        char token[AUTH_TOKEN_MAX_LEN];
+        GetWindowTextA(ctx->hEditToken, token, sizeof(token));
+        remote_device_set_token(token[0] ? token : NULL);
         client_gui_set_server(ctx, server);
         client_gui_connect(ctx);
     }
@@ -396,7 +413,7 @@ void client_gui_cleanup(client_gui_context_t *ctx) {
 }
 
 void client_gui_set_server(client_gui_context_t *ctx, const char *ip) {
-    strncpy(ctx->current_server, ip, sizeof(ctx->current_server) - 1);
+    str_copy(ctx->current_server, ip, sizeof(ctx->current_server));
 }
 
 bool client_gui_connect(client_gui_context_t *ctx) {

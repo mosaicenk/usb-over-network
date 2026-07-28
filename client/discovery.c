@@ -6,6 +6,7 @@
 #include "discovery.h"
 #include "../common/network.h"
 #include "../common/log.h"
+#include "../common/string_utils.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -46,7 +47,9 @@ error_code_t discovery_broadcast(discovery_result_t *result, uint32_t timeout_ms
         return err;
     }
 
-    /* Send broadcast discovery request */
+    /* Send broadcast discovery request. get_broadcast_address() returns a
+     * subnet-directed broadcast for the first up interface, which reaches
+     * servers on the local segment without help from a relay. */
     char broadcast_addr[64];
     get_broadcast_address(broadcast_addr, sizeof(broadcast_addr));
 
@@ -60,13 +63,10 @@ error_code_t discovery_broadcast(discovery_result_t *result, uint32_t timeout_ms
         return ERR_SOCKET_SEND;
     }
 
-    /* Also try subnet broadcast */
-    sent = udp_sendto(sock, DISCOVERY_REQUEST, strlen(DISCOVERY_REQUEST),
-                      "192.168.1.255", DISCOVERY_PORT);
-    sent = udp_sendto(sock, DISCOVERY_REQUEST, strlen(DISCOVERY_REQUEST),
-                      "192.168.0.255", DISCOVERY_PORT);
-    sent = udp_sendto(sock, DISCOVERY_REQUEST, strlen(DISCOVERY_REQUEST),
-                      "10.0.0.255", DISCOVERY_PORT);
+    /* Also try limited broadcast for networks where directed broadcast is
+     * filtered; routers usually relay it on the local segment. */
+    udp_sendto(sock, DISCOVERY_REQUEST, strlen(DISCOVERY_REQUEST),
+               "255.255.255.255", DISCOVERY_PORT);
 
     /* Collect responses */
     DWORD start_time = GetTickCount();
@@ -100,7 +100,7 @@ error_code_t discovery_broadcast(discovery_result_t *result, uint32_t timeout_ms
             discovered_server_t *server = &result->servers[result->server_count];
             memset(server, 0, sizeof(discovered_server_t));
 
-            strncpy(server->ip_address, src_ip, sizeof(server->ip_address) - 1);
+            str_copy(server->ip_address, src_ip, sizeof(server->ip_address));
             server->port = USBIP_PORT;
             server->response_time_ms = GetTickCount() - start_time;
 
@@ -169,7 +169,7 @@ error_code_t discovery_query(const char *ip_address, discovered_server_t *server
     char *ptr = recv_buf + strlen(DISCOVERY_RESPONSE);
     while (*ptr == ' ') ptr++;
 
-    strncpy(server->ip_address, src_ip, sizeof(server->ip_address) - 1);
+    str_copy(server->ip_address, src_ip, sizeof(server->ip_address));
     server->port = USBIP_PORT;
     server->response_time_ms = GetTickCount() - start_time;
 

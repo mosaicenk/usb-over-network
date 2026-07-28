@@ -19,6 +19,8 @@
 #define IDC_SERVER_BTN_HIDE     1006
 #define IDC_SERVER_LABEL_DEV    1007
 #define IDC_SERVER_LABEL_CLI    1008
+#define IDC_SERVER_LABEL_TOKEN  1009
+#define IDC_SERVER_EDIT_TOKEN   1010
 
 /* Client Window Controls */
 #define IDC_CLIENT_EDIT_SERVER  1101
@@ -30,6 +32,8 @@
 #define IDC_CLIENT_BTN_REFRESH  1107
 #define IDC_CLIENT_STATUSBAR    1108
 #define IDC_CLIENT_LABEL_SERVER 1109
+#define IDC_CLIENT_LABEL_TOKEN  1110
+#define IDC_CLIENT_EDIT_TOKEN   1111
 
 /* Tray Menu IDs */
 #define IDM_TRAY_SHOW           2001
@@ -50,9 +54,9 @@
 
 /* Window Dimensions */
 #define SERVER_WINDOW_WIDTH     520
-#define SERVER_WINDOW_HEIGHT    380
+#define SERVER_WINDOW_HEIGHT    420
 #define CLIENT_WINDOW_WIDTH     480
-#define CLIENT_WINDOW_HEIGHT    340
+#define CLIENT_WINDOW_HEIGHT    400
 
 /* ListView Column Widths for Server Device List (520-20-16=484px, -24 checkbox=460px) */
 #define SRV_COL_BUSID           50

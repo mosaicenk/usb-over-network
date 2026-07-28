@@ -1,6 +1,11 @@
 # Build output
 *.o
 *.obj
+bin/*.exe
+bin/*.res
+bin/*.pdb
+bin/*.ilk
+bin/*.exp
 
 # IDE / Editor
 .vs/

@@ -5,6 +5,7 @@
 
 #include "device_list.h"
 #include "../common/log.h"
+#include "../common/string_utils.h"
 #include <string.h>
 #include <time.h>
 
@@ -103,9 +104,9 @@ error_code_t device_list_refresh(device_list_t *list) {
     device_entry_t *entry = list->head;
     while (entry != NULL && export_count < MAX_DEVICES) {
         if (entry->state == DEVICE_STATE_EXPORTED) {
-            strncpy(exports[export_count].busid, entry->device.busid, USBIP_BUSID_MAX);
+            str_copy(exports[export_count].busid, entry->device.busid, USBIP_BUSID_MAX);
             exports[export_count].client_id = entry->client_id;
-            strncpy(exports[export_count].client_ip, entry->client_ip, 64);
+            str_copy(exports[export_count].client_ip, entry->client_ip, 64);
             export_count++;
         }
         entry = entry->next;
@@ -123,7 +124,7 @@ error_code_t device_list_refresh(device_list_t *list) {
         if (entry != NULL) {
             entry->state = DEVICE_STATE_EXPORTED;
             entry->client_id = exports[i].client_id;
-            strncpy(entry->client_ip, exports[i].client_ip, 64);
+            str_copy(entry->client_ip, exports[i].client_ip, 64);
             entry->export_time = get_timestamp();
         }
     }
@@ -317,7 +318,7 @@ error_code_t device_list_export(device_list_t *list, const char *busid,
     entry->state = DEVICE_STATE_EXPORTED;
     entry->client_id = client_id;
     if (client_ip != NULL) {
-        strncpy(entry->client_ip, client_ip, sizeof(entry->client_ip) - 1);
+        str_copy(entry->client_ip, client_ip, sizeof(entry->client_ip));
     }
     entry->export_time = get_timestamp();
 

@@ -13,15 +13,40 @@
 #include "vhci.h"
 #include "../common/log.h"
 #include "../common/config.h"
+#include "../common/string_utils.h"
+#include <windows.h>
+#include <winioctl.h>
 #include <string.h>
 
 /* Windows VHCI driver device name */
 #define VHCI_DEVICE_PATH    "\\\\.\\usbip_vhci"
 
-/* IOCTL codes for VHCI driver (if available) */
-#define IOCTL_VHCI_GET_PORTS_STATUS   0x80002000
-#define IOCTL_VHCI_ATTACH_DEVICE      0x80002004
-#define IOCTL_VHCI_DETACH_DEVICE      0x80002008
+/* usbip-win VHCI IOCTL codes.
+ *   device type : FILE_DEVICE_UNKNOWN (0x22)
+ *   base func   : 0x888
+ *   method      : METHOD_BUFFERED
+ *   access      : FILE_ANY_ACCESS
+ * See cezanne/usbip-win driver headers. Plug takes {SOCKET sock; unsigned devid}. */
+#define USBIP_VHCI_IOCTL_FUNC        0x888
+#define IOCTL_USBIP_VHCI_PLUGIN_HARDWARE \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, USBIP_VHCI_IOCTL_FUNC + 0, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_USBIP_VHCI_UNPLUG_HARDWARE \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, USBIP_VHCI_IOCTL_FUNC + 1, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_USBIP_VHCI_GET_PORTS_STATUS  \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, USBIP_VHCI_IOCTL_FUNC + 3, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+/* Wire layout the usbip-win driver expects on plug-in. The driver takes
+ * ownership of the socket handle; user-mode must not read/write it afterwards. */
+#pragma pack(push, 1)
+typedef struct ioctl_usbip_vhci_plugin {
+    SOCKET sock;
+    unsigned int devid;
+} ioctl_usbip_vhci_plugin_t;
+#pragma pack(pop)
+
+typedef struct ioctl_usbip_vhci_unplug {
+    unsigned int port;
+} ioctl_usbip_vhci_unplug_t;
 
 /* ----- Global State ----- */
 
@@ -215,41 +240,52 @@ error_code_t vhci_attach(vhci_context_t *ctx, int port, socket_t socket,
 
     /* Update port state */
     ctx->ports[port].state = VHCI_PORT_CONNECTING;
-    strncpy(ctx->ports[port].busid, device->busid, sizeof(ctx->ports[port].busid) - 1);
+    str_copy(ctx->ports[port].busid, device->busid, sizeof(ctx->ports[port].busid));
     if (server_ip) {
-        strncpy(ctx->ports[port].server_ip, server_ip, sizeof(ctx->ports[port].server_ip) - 1);
+        str_copy(ctx->ports[port].server_ip, server_ip, sizeof(ctx->ports[port].server_ip));
     }
     ctx->ports[port].server_port = server_port;
     ctx->ports[port].devid = (device->busnum << 16) | device->devnum;
     ctx->ports[port].speed = device->speed;
 
-    /* If driver is available, perform actual attach */
-    if (ctx->driver_handle != NULL) {
-        /*
-         * The actual VHCI driver would:
-         * 1. Create a virtual USB device
-         * 2. Forward URBs through the socket
-         *
-         * This requires kernel-mode driver support.
-         * See usbip-win project for reference implementation.
-         */
+    /* Without a VHCI driver we cannot expose the device to Windows. Fail
+     * loudly instead of pretending success (the previous stub logged a
+     * warning and returned OK, which misled callers). */
+    if (ctx->driver_handle == NULL) {
+        LOG_ERROR("No VHCI driver available; cannot attach %s", device->busid);
+        LOG_ERROR("Install the usbip-win driver and retry.");
+        ctx->ports[port].state = VHCI_PORT_ERROR;
+        return ERR_VHCI_NOT_FOUND;
+    }
 
-        /* For demonstration, we just track the socket */
-        /* In real implementation, pass socket to driver via IOCTL */
+    /* Hand the socket and devid to the kernel-mode VHCI driver. The driver
+     * owns the socket from here on; the caller must not touch it again. */
+    ioctl_usbip_vhci_plugin_t plug;
+    memset(&plug, 0, sizeof(plug));
+    plug.sock = socket;
+    plug.devid = ctx->ports[port].devid;
 
-        LOG_INFO("VHCI driver attach would occur here (driver-specific)");
-    } else {
-        LOG_WARN("No VHCI driver - device will be tracked but not virtualized");
-        LOG_WARN("For full USB virtualization, install usbip-win driver");
+    DWORD bytes_returned = 0;
+    BOOL ok = DeviceIoControl(
+        ctx->driver_handle,
+        IOCTL_USBIP_VHCI_PLUGIN_HARDWARE,
+        &plug, sizeof(plug),
+        NULL, 0,
+        &bytes_returned,
+        NULL);
+
+    if (!ok) {
+        DWORD err = GetLastError();
+        LOG_ERROR("VHCI plug IOCTL failed: %lu", err);
+        ctx->ports[port].state = VHCI_PORT_ERROR;
+        return ERR_VHCI_ATTACH_FAILED;
     }
 
     ctx->ports[port].state = VHCI_PORT_CONNECTED;
 
-    LOG_INFO("Device %s attached to port %d", device->busid, port);
+    LOG_INFO("Device %s attached to port %d (kernel-mode forwarding)", device->busid, port);
     LOG_INFO("  VID:PID = %04X:%04X", device->idVendor, device->idProduct);
     LOG_INFO("  Speed = %s", usb_speed_string(device->speed));
-
-    (void)socket;  /* Socket would be passed to driver */
 
     return ERR_SUCCESS;
 }
@@ -271,9 +307,25 @@ error_code_t vhci_detach(vhci_context_t *ctx, int port) {
 
     ctx->ports[port].state = VHCI_PORT_DISCONNECTING;
 
-    /* If driver is available, perform actual detach */
+    /* Ask the kernel-mode VHCI driver to unplug the port. */
     if (ctx->driver_handle != NULL) {
-        /* TODO: Send IOCTL to detach device */
+        ioctl_usbip_vhci_unplug_t unplug;
+        unplug.port = (unsigned int)port;
+
+        DWORD bytes_returned = 0;
+        BOOL ok = DeviceIoControl(
+            ctx->driver_handle,
+            IOCTL_USBIP_VHCI_UNPLUG_HARDWARE,
+            &unplug, sizeof(unplug),
+            NULL, 0,
+            &bytes_returned,
+            NULL);
+
+        if (!ok) {
+            DWORD err = GetLastError();
+            LOG_WARN("VHCI unplug IOCTL failed on port %d: %lu", port, err);
+            /* Continue clearing local state regardless. */
+        }
     }
 
     /* Clear port info */

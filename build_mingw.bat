@@ -27,9 +27,9 @@ echo.
 
 REM Configuration
 set CC=gcc
-set CFLAGS=-Wall -Wextra -O2 -D_WIN32_WINNT=0x0601
-set LDFLAGS=-lws2_32 -lsetupapi -lwinusb
-set GUI_LDFLAGS=-lws2_32 -lsetupapi -lwinusb -lgdi32 -lcomctl32 -lshell32 -mwindows
+set CFLAGS=-Wall -Wextra -Werror -O2 -D_WIN32_WINNT=0x0601
+set LDFLAGS=-lws2_32 -liphlpapi -lsetupapi -lwinusb
+set GUI_LDFLAGS=-lws2_32 -liphlpapi -lsetupapi -lwinusb -lgdi32 -lcomctl32 -lshell32 -mwindows
 
 REM Source directories
 set COMMON_DIR=common
@@ -41,7 +41,7 @@ REM Output directory
 if not exist "bin" mkdir bin
 
 REM Common source files
-set COMMON_SRC=%COMMON_DIR%\error.c %COMMON_DIR%\log.c %COMMON_DIR%\network_win32.c %COMMON_DIR%\protocol.c
+set COMMON_SRC=%COMMON_DIR%\error.c %COMMON_DIR%\log.c %COMMON_DIR%\auth.c %COMMON_DIR%\network_win32.c %COMMON_DIR%\protocol.c
 
 REM Server source files
 set SERVER_CORE=%SERVER_DIR%\usb_host_win32.c %SERVER_DIR%\device_list.c %SERVER_DIR%\client_manager.c %SERVER_DIR%\urb_handler.c

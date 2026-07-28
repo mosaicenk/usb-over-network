@@ -1,4 +1,4 @@
-/*
+﻿/*
  * USB Over Network - USB Host Implementation (Windows)
  * Windows SetupAPI + WinUSB implementation
  */
@@ -6,6 +6,7 @@
 #include "usb_host.h"
 #include "../common/log.h"
 #include "../common/config.h"
+#include "../common/string_utils.h"
 
 #include <windows.h>
 #include <setupapi.h>
@@ -19,17 +20,6 @@
 #pragma comment(lib, "setupapi.lib")
 #pragma comment(lib, "winusb.lib")
 #endif
-
-/* GUID for USB devices - use existing from usbiodef.h if available */
-#ifndef GUID_DEVINTERFACE_USB_DEVICE_DEFINED
-static const GUID MY_GUID_DEVINTERFACE_USB_DEVICE =
-    {0xA5DCBF10L, 0x6530, 0x11D2, {0x90, 0x1F, 0x00, 0xC0, 0x4F, 0xB9, 0x51, 0xED}};
-#define GUID_DEVINTERFACE_USB_DEVICE MY_GUID_DEVINTERFACE_USB_DEVICE
-#endif
-
-/* WinUSB interface GUID (generic) */
-static const GUID MY_GUID_DEVINTERFACE_WINUSB =
-    {0xDEE824EF, 0x729B, 0x4A0E, {0x9C, 0x14, 0xB7, 0x11, 0x7D, 0x33, 0xA8, 0x17}};
 
 /* Global state */
 static struct {
@@ -51,26 +41,18 @@ static uint32_t get_usb_speed(USB_DEVICE_SPEED speed) {
 }
 
 static void parse_busid_from_path(const char *path, char *busid, size_t busid_len) {
-    /* Extract bus ID from device instance path */
-    /* Format example: USB\VID_1234&PID_5678\serial -> 1-1 style */
-    /* For simplicity, we'll create a synthetic bus ID */
-
-    const char *vid_pos = strstr(path, "VID_");
-    const char *pid_pos = strstr(path, "PID_");
-
-    if (vid_pos && pid_pos) {
-        unsigned int vid = 0, pid = 0;
-        sscanf(vid_pos, "VID_%04X", &vid);
-        sscanf(pid_pos, "PID_%04X", &pid);
-        /* Create a unique bus ID based on VID/PID and hash of path */
-        unsigned int hash = 0;
-        for (const char *p = path; *p; p++) {
-            hash = hash * 31 + *p;
-        }
-        snprintf(busid, busid_len, "%u-%u", (hash % 8) + 1, (hash >> 8) % 8);
-    } else {
-        snprintf(busid, busid_len, "1-1");
+    /* Windows has no Linux-style "<bus>-<port>" location string, so we derive
+     * a stable, collision-light busid from the device instance id via FNV-1a.
+     * The previous implementation hashed the VID/PID, which collided for every
+     * device of the same model (e.g. two identical mice). Hashing the full
+     * instance id keeps siblings distinct while remaining stable across reboots. */
+    uint32_t hash = 0x811c9dc5u;
+    for (const char *p = path; *p; p++) {
+        hash ^= (uint8_t)*p;
+        hash *= 0x01000193u;
     }
+    /* USB/IP busid format is "<bus>-<port>". Keep the bus nibble out of zero. */
+    snprintf(busid, busid_len, "%u-%u", (hash >> 8) % 8 + 1, hash % 16 + 1);
 }
 
 /* ----- Initialization ----- */
@@ -289,7 +271,7 @@ error_code_t usb_enumerate_devices(usb_enum_callback_t callback, void *user_data
             usb_device_t device = {0};
 
             /* Store instance ID as path */
-            strncpy(device.path, instance_id, sizeof(device.path) - 1);
+            str_copy(device.path, instance_id, sizeof(device.path));
 
             /* Parse bus ID */
             parse_busid_from_path(instance_id, device.busid, sizeof(device.busid));
@@ -519,7 +501,7 @@ error_code_t usb_reset_device(usb_device_t *device) {
     /* WinUSB doesn't have a direct reset function */
     /* Close and reopen as workaround */
     char path[USBIP_PATH_MAX];
-    strncpy(path, device->path, sizeof(path));
+    str_copy(path, device->path, sizeof(path));
 
     usb_close_device(device);
     Sleep(100);
@@ -824,8 +806,8 @@ void usb_unregister_hotplug(void) {
 void usb_device_to_usbip(const usb_device_t *device, usbip_usb_device_t *usbip_dev) {
     memset(usbip_dev, 0, sizeof(*usbip_dev));
 
-    strncpy(usbip_dev->path, device->path, sizeof(usbip_dev->path) - 1);
-    strncpy(usbip_dev->busid, device->busid, sizeof(usbip_dev->busid) - 1);
+    str_copy(usbip_dev->path, device->path, sizeof(usbip_dev->path));
+    str_copy(usbip_dev->busid, device->busid, sizeof(usbip_dev->busid));
     usbip_dev->busnum = device->busnum;
     usbip_dev->devnum = device->devnum;
     usbip_dev->speed = device->speed;

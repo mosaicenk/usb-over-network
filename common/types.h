@@ -69,6 +69,15 @@ typedef int ssize_t;
 #define sleep_ms(ms) Sleep(ms)
 #define sleep_sec(s) Sleep((s) * 1000)
 
+/* Auto-reset event: used to wake worker threads without busy-polling.
+ * Use event_wait/event_wait_timeout inside a check loop. */
+typedef HANDLE event_t;
+#define event_init(e)       ((*(e) = CreateEvent(NULL, FALSE, FALSE, NULL)) != NULL ? 0 : -1)
+#define event_destroy(e)    CloseHandle(*(e))
+#define event_signal(e)     (SetEvent(*(e)) ? 0 : -1)
+#define event_wait(e)       WaitForSingleObject(*(e), INFINITE)
+#define event_wait_timeout(e, ms) WaitForSingleObject(*(e), (ms))
+
 /* Packed structure attribute */
 #ifdef _MSC_VER
     #define PACKED_BEGIN __pragma(pack(push, 1))

@@ -1,0 +1,10 @@
+# Normalize line endings in the repo. Source files are LF on disk; git does
+# not translate on checkout, so editors and build tools see consistent bytes.
+* text=auto eol=lf
+
+*.bat   text eol=crlf
+*.ps1   text eol=crlf
+*.exe   binary
+*.ico   binary
+*.rc    text eol=crlf
+*.manifest binary

@@ -220,7 +220,7 @@ void log_write(log_level_t level, const char *file, int line, const char *func, 
         return;
     }
 
-    char timestamp[32] = {0};
+    char timestamp[48] = {0};  /* fits "%04d-%02d-%02d %02d:%02d:%02d.%03d" + slack */
     char message[LOG_BUFFER_SIZE];
     char full_message[LOG_BUFFER_SIZE + 256];
     va_list args;

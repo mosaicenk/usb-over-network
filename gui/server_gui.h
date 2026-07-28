@@ -9,6 +9,7 @@
 #include "gui_common.h"
 #include "../server/device_list.h"
 #include "../server/client_manager.h"
+#include "../common/auth.h"
 
 /* Server GUI Context */
 typedef struct server_gui_context {
@@ -21,6 +22,9 @@ typedef struct server_gui_context {
     socket_t server_socket;
     HANDLE server_thread;
 
+    /* Auth token (empty = auth disabled). Read from the token field at start. */
+    char auth_token[AUTH_TOKEN_MAX_LEN];
+
     /* Discovery state */
     socket_t discovery_socket;
     HANDLE discovery_thread;
@@ -28,6 +32,8 @@ typedef struct server_gui_context {
     /* Controls */
     HWND hLabelDevices;
     HWND hLabelClients;
+    HWND hLabelToken;
+    HWND hEditToken;
     HWND hBtnRefresh;
     HWND hBtnHide;
 

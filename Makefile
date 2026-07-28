@@ -3,9 +3,9 @@
 
 # Compiler settings
 CC = cl
-CFLAGS = /nologo /W4 /O2 /D_CRT_SECURE_NO_WARNINGS /DWIN32_LEAN_AND_MEAN
-LDFLAGS = /link ws2_32.lib setupapi.lib winusb.lib
-GUI_LDFLAGS = /link ws2_32.lib setupapi.lib winusb.lib user32.lib gdi32.lib comctl32.lib shell32.lib
+CFLAGS = /nologo /W4 /WX /O2 /D_CRT_SECURE_NO_WARNINGS /DWIN32_LEAN_AND_MEAN
+LDFLAGS = /link ws2_32.lib iphlpapi.lib setupapi.lib winusb.lib
+GUI_LDFLAGS = /link ws2_32.lib iphlpapi.lib setupapi.lib winusb.lib user32.lib gdi32.lib comctl32.lib shell32.lib
 
 # Directories
 COMMON_DIR = common
@@ -18,6 +18,7 @@ BIN_DIR = bin
 COMMON_SRC = \
 	$(COMMON_DIR)\error.c \
 	$(COMMON_DIR)\log.c \
+	$(COMMON_DIR)\auth.c \
 	$(COMMON_DIR)\network_win32.c \
 	$(COMMON_DIR)\protocol.c
 
@@ -46,6 +47,7 @@ SERVER_BIN = $(BIN_DIR)\usb-server.exe
 CLIENT_BIN = $(BIN_DIR)\usb-client.exe
 SERVER_GUI_BIN = $(BIN_DIR)\usb-server-gui.exe
 CLIENT_GUI_BIN = $(BIN_DIR)\usb-client-gui.exe
+TEST_BIN = $(BIN_DIR)\test_protocol.exe
 
 # Default target - build everything
 all: dirs cli gui
@@ -55,6 +57,9 @@ cli: dirs server client
 
 # GUI only
 gui: dirs server-gui client-gui
+
+# Tests only
+test: dirs $(TEST_BIN)
 
 # Create output directory
 dirs:
@@ -87,6 +92,11 @@ clean:
 	@if exist *.obj del /Q *.obj
 	@echo Clean complete
 
+# Build protocol unit tests (pure logic, no USB/network)
+$(TEST_BIN): dirs
+	$(CC) $(CFLAGS) /Fe:$(TEST_BIN) $(COMMON_DIR)\protocol.c tests\test_protocol.c $(LDFLAGS)
+	@echo Tests built: $(TEST_BIN)
+
 # Install (copy to system path)
 install: all
 	@echo Install not implemented. Copy binaries manually from $(BIN_DIR)
@@ -99,6 +109,7 @@ help:
 	@echo   all         - Build all (CLI + GUI) [default]
 	@echo   cli         - Build CLI applications only
 	@echo   gui         - Build GUI applications only
+	@echo   test        - Build protocol unit tests
 	@echo   server      - Build CLI server only
 	@echo   client      - Build CLI client only
 	@echo   server-gui  - Build GUI server only
@@ -113,4 +124,4 @@ help:
 	@echo   nmake server-gui   - Build GUI server
 	@echo   nmake clean        - Clean
 
-.PHONY: all dirs cli gui server client server-gui client-gui clean install help
+.PHONY: all dirs cli gui test server client server-gui client-gui clean install help

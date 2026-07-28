@@ -7,6 +7,8 @@
 #include "../common/log.h"
 #include "../common/network.h"
 #include "../common/config.h"
+#include "../common/auth.h"
+#include "../common/string_utils.h"
 #include "../server/usb_host.h"
 #include <stdio.h>
 
@@ -78,6 +80,14 @@ static void create_server_controls(server_gui_context_t *ctx) {
     HWND hWnd = ctx->base.hMainWnd;
     int y = MARGIN;
 
+    /* Auth token row (optional; leave blank to accept all LAN clients) */
+    ctx->hLabelToken = gui_create_label(hWnd, IDC_SERVER_LABEL_TOKEN,
+        L"Auth Token:", MARGIN, y + 4, 80, LABEL_HEIGHT);
+    ctx->hEditToken = gui_create_edit(hWnd, IDC_SERVER_EDIT_TOKEN,
+        MARGIN + 85, y, SERVER_WINDOW_WIDTH - 2 * MARGIN - 101, EDIT_HEIGHT);
+    SendMessage(ctx->hEditToken, EM_SETPASSWORDCHAR, L'*', 0);
+    y += EDIT_HEIGHT + MARGIN;
+
     /* Device list label */
     ctx->hLabelDevices = gui_create_label(hWnd, IDC_SERVER_LABEL_DEV,
         L"USB Devices on This Computer:", MARGIN, y, 300, LABEL_HEIGHT);
@@ -115,6 +125,8 @@ static void create_server_controls(server_gui_context_t *ctx) {
         L"Hide to Tray", btnX, btnY, BUTTON_WIDTH + 10, BUTTON_HEIGHT);
 
     /* Apply font to all controls */
+    SendMessage(ctx->hLabelToken, WM_SETFONT, (WPARAM)ctx->base.hFont, TRUE);
+    SendMessage(ctx->hEditToken, WM_SETFONT, (WPARAM)ctx->base.hFont, TRUE);
     SendMessage(ctx->hLabelDevices, WM_SETFONT, (WPARAM)ctx->base.hFont, TRUE);
     SendMessage(ctx->hLabelClients, WM_SETFONT, (WPARAM)ctx->base.hFont, TRUE);
     SendMessage(ctx->base.hDeviceList, WM_SETFONT, (WPARAM)ctx->base.hFont, TRUE);
@@ -329,6 +341,17 @@ static DWORD WINAPI server_accept_thread(LPVOID param) {
         if (socket_is_valid(client_sock)) {
             LOG_INFO("Client connected: %s:%u", client_ip, client_port);
 
+            /* Authenticate before any USB/IP traffic (no-op if token empty). */
+            if (auth_is_enabled(ctx->auth_token)) {
+                error_code_t auth_err = auth_server_handshake(client_sock, ctx->auth_token);
+                if (auth_err != ERR_SUCCESS) {
+                    LOG_WARN("Rejecting %s:%u - auth failed (%s)",
+                        client_ip, client_port, error_string(auth_err));
+                    socket_close(client_sock);
+                    continue;
+                }
+            }
+
             /* Add to client manager */
             client_connection_t *conn = NULL;
             error_code_t err = client_manager_add(&ctx->client_manager,
@@ -501,6 +524,11 @@ void server_gui_stop_all(server_gui_context_t *ctx) {
 }
 
 bool server_gui_start_server(server_gui_context_t *ctx) {
+    /* Read the auth token from the GUI field (empty = auth disabled). */
+    char token[AUTH_TOKEN_MAX_LEN] = {0};
+    GetWindowTextA(ctx->hEditToken, token, sizeof(token));
+    str_copy(ctx->auth_token, token, sizeof(ctx->auth_token));
+
     /* Create TCP server socket for USB/IP */
     ctx->server_socket = tcp_server_create(NULL, USBIP_PORT);
     if (!socket_is_valid(ctx->server_socket)) {

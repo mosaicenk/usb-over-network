@@ -16,6 +16,8 @@
 #include "../common/log.h"
 #include "../common/network.h"
 #include "../common/protocol.h"
+#include "../common/auth.h"
+#include "../common/string_utils.h"
 #include "discovery.h"
 #include "vhci.h"
 #include "remote_device.h"
@@ -40,6 +42,7 @@ static struct {
     char busid[USBIP_BUSID_MAX];
     int port;
     bool verbose;
+    const char *auth_token;
     vhci_context_t vhci;
     remote_device_list_t device_list;
 } g_client = {
@@ -47,7 +50,8 @@ static struct {
     .command = CMD_NONE,
     .server_port = USBIP_PORT,
     .port = -1,
-    .verbose = false
+    .verbose = false,
+    .auth_token = NULL
 };
 
 /* ----- Signal Handling ----- */
@@ -76,6 +80,7 @@ static void print_usage(const char *prog_name) {
     printf("  status                      Show attached devices\n");
     printf("\nOptions:\n");
     printf("  -p, --port PORT       Server port (default: %d)\n", USBIP_PORT);
+    printf("  -k, --auth-token T    Preshared token (default: $USBIP_AUTH_TOKEN)\n");
     printf("  -v, --verbose         Verbose output\n");
     printf("  -h, --help            Show this help\n");
     printf("\nExamples:\n");
@@ -100,6 +105,10 @@ static int parse_args(int argc, char *argv[]) {
         }
         else if ((strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "--port") == 0) && i + 1 < argc) {
             g_client.server_port = (uint16_t)atoi(argv[++i]);
+            i++;
+        }
+        else if ((strcmp(argv[i], "-k") == 0 || strcmp(argv[i], "--auth-token") == 0) && i + 1 < argc) {
+            g_client.auth_token = argv[++i];
             i++;
         }
         else {
@@ -127,7 +136,7 @@ static int parse_args(int argc, char *argv[]) {
             fprintf(stderr, "Missing server IP address\n");
             return -1;
         }
-        strncpy(g_client.server_ip, argv[i++], sizeof(g_client.server_ip) - 1);
+        str_copy(g_client.server_ip, argv[i++], sizeof(g_client.server_ip));
     }
     else if (strcmp(cmd, "attach") == 0) {
         g_client.command = CMD_ATTACH;
@@ -135,8 +144,8 @@ static int parse_args(int argc, char *argv[]) {
             fprintf(stderr, "Missing server IP or bus ID\n");
             return -1;
         }
-        strncpy(g_client.server_ip, argv[i++], sizeof(g_client.server_ip) - 1);
-        strncpy(g_client.busid, argv[i++], sizeof(g_client.busid) - 1);
+        str_copy(g_client.server_ip, argv[i++], sizeof(g_client.server_ip));
+        str_copy(g_client.busid, argv[i++], sizeof(g_client.busid));
     }
     else if (strcmp(cmd, "detach") == 0) {
         g_client.command = CMD_DETACH;
@@ -344,6 +353,13 @@ static error_code_t client_init(void) {
     if (err != ERR_SUCCESS) {
         LOG_ERROR("Failed to initialize network: %s", error_string(err));
         return err;
+    }
+
+    /* Resolve auth token (CLI > env > default) and hand it to remote_device. */
+    g_client.auth_token = auth_get_token(g_client.auth_token);
+    remote_device_set_token(g_client.auth_token);
+    if (auth_is_enabled(g_client.auth_token)) {
+        LOG_INFO("Using preshared auth token");
     }
 
     return ERR_SUCCESS;

@@ -10,6 +10,7 @@
 #include "../client/discovery.h"
 #include "../client/remote_device.h"
 #include "../client/vhci.h"
+#include "../common/auth.h"
 
 /* Client GUI Context */
 typedef struct client_gui_context {
@@ -25,6 +26,8 @@ typedef struct client_gui_context {
     /* Controls */
     HWND hLabelServer;
     HWND hEditServer;
+    HWND hLabelToken;
+    HWND hEditToken;
     HWND hBtnDiscover;
     HWND hBtnConnect;
     HWND hLabelDevices;

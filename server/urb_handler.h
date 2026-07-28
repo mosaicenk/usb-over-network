@@ -33,6 +33,7 @@ typedef struct urb_queue {
     urb_entry_t *tail;              /* Queue tail */
     int count;                      /* Number of entries */
     mutex_t mutex;                  /* Thread safety */
+    event_t notify;                 /* Signalled when an entry is pushed */
 } urb_queue_t;
 
 /* URB handler context */
