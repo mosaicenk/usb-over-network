@@ -1,11 +1,6 @@
 /* USB Over Network Server - Resource Script */
-
 #include <windows.h>
 #include "resource.h"
-
-/* Application Icon */
-IDI_APP_ICON ICON "app.ico"
-IDI_TRAY_ICON ICON "app.ico"
 
 /* Version Information */
 VS_VERSION_INFO VERSIONINFO
@@ -21,11 +16,11 @@ BEGIN
     BEGIN
         BLOCK "040904B0"
         BEGIN
-            VALUE "CompanyName", "USB Over Network"
+            VALUE "CompanyName", "CTK Technologies"
             VALUE "FileDescription", "USB Over Network Server"
             VALUE "FileVersion", "1.0.0.0"
             VALUE "InternalName", "usb-server-gui"
-            VALUE "LegalCopyright", "Educational Use"
+            VALUE "LegalCopyright", "MIT License (c) 2025 CTK Technologies"
             VALUE "OriginalFilename", "usb-server-gui.exe"
             VALUE "ProductName", "USB Over Network"
             VALUE "ProductVersion", "1.0.0.0"
@@ -37,5 +32,7 @@ BEGIN
     END
 END
 
-/* Application Manifest for Visual Styles */
+/* Application Manifest: visual styles, DPI awareness, requireAdministrator
+ * (USB device access needs elevation). */
 1 RT_MANIFEST "app.manifest"
+

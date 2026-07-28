@@ -33,8 +33,8 @@ this repository.
 ## Requirements
 
 ### Build
-- MinGW-w64 (GCC) or Visual Studio 2019/2022
-- Windows SDK
+- MinGW-w64 (GCC) with GNU make (`mingw32-make`)
+- Windows SDK headers (bundled with MinGW-w64)
 
 ### Runtime
 - Windows 10 or Windows 11
@@ -44,24 +44,30 @@ this repository.
 
 ## Build
 
-### MinGW (recommended)
+The project ships a single `Makefile` (GNU make, MinGW-w64) as the source of
+truth for building. MSVC is not supported via the Makefile (nmake lacks the
+GNU make features it uses); use MinGW-w64.
+
+### MinGW-w64
 
 ```cmd
-build_mingw.bat gui
+mingw32-make CC=gcc            :: build CLI + GUI
+mingw32-make CC=gcc cli        :: CLI only
+mingw32-make CC=gcc gui        :: GUI only (manifest + version resources)
+mingw32-make CC=gcc test       :: build and run protocol tests
+mingw32-make CC=gcc clean      :: remove build output
 ```
 
-### Visual Studio
+### Targets
 
-```cmd
-build_win32.bat
-```
-
-### Tests
-
-```cmd
-nmake -f Makefile test
-bin\test_protocol.exe
-```
+| Target   | Result                                           |
+|----------|--------------------------------------------------|
+| `all`    | CLI server + client, GUI server + client         |
+| `cli`    | CLI server + client                              |
+| `gui`    | GUI server + client (with embedded manifest)     |
+| `test`   | Build and run protocol unit tests                |
+| `clean`  | Remove build output in `bin/`                    |
+| `help`   | Show available targets                           |
 
 Build outputs land in the `bin/` folder:
 

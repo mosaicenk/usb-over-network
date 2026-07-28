@@ -23,38 +23,7 @@ jobs:
           install: >-
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-make
-      - name: Build CLI (-Werror)
-        run: |
-          mkdir -p bin
-          gcc -Wall -Wextra -Werror -O2 -D_WIN32_WINNT=0x0601 \
-            -o bin/usb-server.exe \
-            common/error.c common/log.c common/auth.c common/network_win32.c common/protocol.c \
-            server/usb_host_win32.c server/device_list.c server/urb_handler.c \
-            server/client_manager.c server/main.c \
-            -lws2_32 -liphlpapi -lsetupapi -lwinusb
-          gcc -Wall -Wextra -Werror -O2 -D_WIN32_WINNT=0x0601 \
-            -o bin/usb-client.exe \
-            common/error.c common/log.c common/auth.c common/network_win32.c common/protocol.c \
-            client/discovery.c client/vhci_win32.c client/remote_device.c client/main.c \
-            -lws2_32 -liphlpapi -lsetupapi -lwinusb
-      - name: Build GUI (-Werror)
-        run: |
-          gcc -Wall -Wextra -Werror -O2 -D_WIN32_WINNT=0x0601 -DUNICODE -D_UNICODE -mwindows \
-            -o bin/usb-server-gui.exe \
-            common/error.c common/log.c common/auth.c common/network_win32.c common/protocol.c \
-            server/usb_host_win32.c server/device_list.c server/urb_handler.c \
-            server/client_manager.c gui/gui_common.c gui/server_gui.c \
-            -lws2_32 -liphlpapi -lsetupapi -lwinusb -lgdi32 -lcomctl32 -lshell32
-          gcc -Wall -Wextra -Werror -O2 -D_WIN32_WINNT=0x0601 -DUNICODE -D_UNICODE -mwindows \
-            -o bin/usb-client-gui.exe \
-            common/error.c common/log.c common/auth.c common/network_win32.c common/protocol.c \
-            client/discovery.c client/vhci_win32.c client/remote_device.c \
-            gui/gui_common.c gui/client_gui.c \
-            -lws2_32 -liphlpapi -lsetupapi -lwinusb -lgdi32 -lcomctl32 -lshell32
+      - name: Build CLI + GUI (-Werror)
+        run: mingw32-make CC=gcc all
       - name: Build & run protocol tests
-        run: |
-          gcc -Wall -Wextra -Werror -O2 -D_WIN32_WINNT=0x0601 \
-            -o bin/test_protocol.exe \
-            common/protocol.c common/log.c common/network_win32.c common/error.c common/auth.c \
-            tests/test_protocol.c -lws2_32 -liphlpapi
-          ./bin/test_protocol.exe
+        run: mingw32-make CC=gcc test

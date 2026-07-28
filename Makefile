@@ -1,127 +1,105 @@
-# USB Over Network - Makefile
-# Windows-only build using MSVC
+# USB Over Network - Makefile (MinGW-w64 / GNU make)
+#
+# This Makefile targets MinGW-w64 with GNU make (mingw32-make).
+# It is the single source of truth for building the project.
+#
+# MSVC is not supported via this Makefile (nmake lacks GNU make features
+# like ifeq/$(addprefix)); use the MinGW toolchain instead.
+#
+# Targets:
+#   make            build everything (CLI + GUI)
+#   make cli        build CLI server + client
+#   make gui        build GUI server + client (with manifest/version resources)
+#   make test       build & run protocol unit tests
+#   make clean      remove build output
+#   make help       show this help
 
-# Compiler settings
-CC = cl
-CFLAGS = /nologo /W4 /WX /O2 /D_CRT_SECURE_NO_WARNINGS /DWIN32_LEAN_AND_MEAN
-LDFLAGS = /link ws2_32.lib iphlpapi.lib setupapi.lib winusb.lib
-GUI_LDFLAGS = /link ws2_32.lib iphlpapi.lib setupapi.lib winusb.lib user32.lib gdi32.lib comctl32.lib shell32.lib
+# ----- Toolchain -----
+# GNU make defaults CC to "cc"; force gcc (MinGW) explicitly.
+ifndef CC
+CC := gcc
+endif
 
-# Directories
-COMMON_DIR = common
-SERVER_DIR = server
-CLIENT_DIR = client
-GUI_DIR = gui
-BIN_DIR = bin
+BIN_DIR  := bin
+COMMON   := common/error.c common/log.c common/auth.c common/network_win32.c common/protocol.c
+SRV_CORE := server/usb_host_win32.c server/device_list.c server/urb_handler.c server/client_manager.c
+CLI_CORE := client/discovery.c client/vhci_win32.c client/remote_device.c
+GUI_CMN  := gui/gui_common.c
 
-# Common source files
-COMMON_SRC = \
-	$(COMMON_DIR)\error.c \
-	$(COMMON_DIR)\log.c \
-	$(COMMON_DIR)\auth.c \
-	$(COMMON_DIR)\network_win32.c \
-	$(COMMON_DIR)\protocol.c
+# Warnings are errors: the build must stay clean.
+CFLAGS  := -Wall -Wextra -Werror -O2 -D_WIN32_WINNT=0x0601
+RC      := windres
+RCFLAGS :=
 
-# Server source files (core without main)
-SERVER_CORE = \
-	$(SERVER_DIR)\usb_host_win32.c \
-	$(SERVER_DIR)\device_list.c \
-	$(SERVER_DIR)\urb_handler.c \
-	$(SERVER_DIR)\client_manager.c
-
-SERVER_SRC = $(SERVER_DIR)\main.c $(SERVER_CORE)
-
-# Client source files (core without main)
-CLIENT_CORE = \
-	$(CLIENT_DIR)\discovery.c \
-	$(CLIENT_DIR)\vhci_win32.c \
-	$(CLIENT_DIR)\remote_device.c
-
-CLIENT_SRC = $(CLIENT_DIR)\main.c $(CLIENT_CORE)
-
-# GUI source files
-GUI_COMMON = $(GUI_DIR)\gui_common.c
+# iphlpapi: GetAdaptersAddresses for broadcast/local-IP discovery.
+LIBS_NET := ws2_32 iphlpapi setupapi winusb
+LIBS_GUI := $(LIBS_NET) gdi32 comctl32 shell32
+LDCLI    := $(addprefix -l,$(LIBS_NET))
+LDGUI    := $(addprefix -l,$(LIBS_GUI)) -mwindows
 
 # Output binaries
-SERVER_BIN = $(BIN_DIR)\usb-server.exe
-CLIENT_BIN = $(BIN_DIR)\usb-client.exe
-SERVER_GUI_BIN = $(BIN_DIR)\usb-server-gui.exe
-CLIENT_GUI_BIN = $(BIN_DIR)\usb-client-gui.exe
-TEST_BIN = $(BIN_DIR)\test_protocol.exe
+SERVER_BIN     := $(BIN_DIR)/usb-server.exe
+CLIENT_BIN     := $(BIN_DIR)/usb-client.exe
+SERVER_GUI_BIN := $(BIN_DIR)/usb-server-gui.exe
+CLIENT_GUI_BIN := $(BIN_DIR)/usb-client-gui.exe
+TEST_BIN       := $(BIN_DIR)/test_protocol.exe
 
-# Default target - build everything
+.PHONY: all cli gui test clean help
 all: dirs cli gui
 
-# CLI only
-cli: dirs server client
+cli: dirs $(SERVER_BIN) $(CLIENT_BIN)
 
-# GUI only
-gui: dirs server-gui client-gui
+gui: dirs $(SERVER_GUI_BIN) $(CLIENT_GUI_BIN)
 
-# Tests only
-test: dirs $(TEST_BIN)
-
-# Create output directory
 dirs:
-	@if not exist $(BIN_DIR) mkdir $(BIN_DIR)
+	@if not exist "$(BIN_DIR)" mkdir "$(BIN_DIR)"
 
-# Build CLI server
-server: dirs
-	$(CC) $(CFLAGS) /Fe:$(SERVER_BIN) $(COMMON_SRC) $(SERVER_SRC) $(LDFLAGS)
-	@echo Server built: $(SERVER_BIN)
+# ----- CLI builds -----
+$(SERVER_BIN): $(COMMON) $(SRV_CORE) server/main.c | dirs
+	$(CC) $(CFLAGS) -o $@ $^ $(LDCLI)
 
-# Build CLI client
-client: dirs
-	$(CC) $(CFLAGS) /Fe:$(CLIENT_BIN) $(COMMON_SRC) $(CLIENT_SRC) $(LDFLAGS)
-	@echo Client built: $(CLIENT_BIN)
+$(CLIENT_BIN): $(COMMON) $(CLI_CORE) client/main.c | dirs
+	$(CC) $(CFLAGS) -o $@ $^ $(LDCLI)
 
-# Build GUI server
-server-gui: dirs
-	$(CC) $(CFLAGS) /Fe:$(SERVER_GUI_BIN) $(COMMON_SRC) $(SERVER_CORE) $(GUI_COMMON) $(GUI_DIR)\server_gui.c $(GUI_LDFLAGS)
-	@echo Server GUI built: $(SERVER_GUI_BIN)
+# ----- GUI resource objects (manifest + version info) -----
+$(BIN_DIR)/server_gui.o: gui/server_gui.rc gui/app.manifest gui/resource.h | dirs
+	$(RC) $(RCFLAGS) -o $@ gui/server_gui.rc
 
-# Build GUI client
-client-gui: dirs
-	$(CC) $(CFLAGS) /Fe:$(CLIENT_GUI_BIN) $(COMMON_SRC) $(CLIENT_CORE) $(GUI_COMMON) $(GUI_DIR)\client_gui.c $(GUI_LDFLAGS)
-	@echo Client GUI built: $(CLIENT_GUI_BIN)
+$(BIN_DIR)/client_gui.o: gui/client_gui.rc gui/app.manifest gui/resource.h | dirs
+	$(RC) $(RCFLAGS) -o $@ gui/client_gui.rc
 
-# Clean build artifacts
+# ----- GUI builds (link the compiled resource for manifest + version info) -----
+$(SERVER_GUI_BIN): $(COMMON) $(SRV_CORE) $(GUI_CMN) gui/server_gui.c $(BIN_DIR)/server_gui.o | dirs
+	$(CC) $(CFLAGS) -o $@ $(COMMON) $(SRV_CORE) $(GUI_CMN) gui/server_gui.c $(BIN_DIR)/server_gui.o $(LDGUI)
+
+$(CLIENT_GUI_BIN): $(COMMON) $(CLI_CORE) $(GUI_CMN) gui/client_gui.c $(BIN_DIR)/client_gui.o | dirs
+	$(CC) $(CFLAGS) -o $@ $(COMMON) $(CLI_CORE) $(GUI_CMN) gui/client_gui.c $(BIN_DIR)/client_gui.o $(LDGUI)
+
+# ----- Tests (pure logic, no USB/network) -----
+test: dirs $(TEST_BIN)
+	@echo Running protocol tests...
+	@./$(TEST_BIN)
+
+$(TEST_BIN): $(COMMON) tests/test_protocol.c | dirs
+	$(CC) $(CFLAGS) -o $@ $^ $(LDCLI)
+
+# ----- Housekeeping -----
+# cmd.exe-compatible: mingw32-make defaults to cmd.exe on Windows
+# when sh.exe is not on PATH.
 clean:
-	@if exist $(BIN_DIR)\*.exe del /Q $(BIN_DIR)\*.exe
-	@if exist $(BIN_DIR)\*.res del /Q $(BIN_DIR)\*.res
-	@if exist *.obj del /Q *.obj
-	@echo Clean complete
+	@if exist "$(BIN_DIR)\*.exe" del /Q "$(BIN_DIR)\*.exe"
+	@if exist "$(BIN_DIR)\*.res" del /Q "$(BIN_DIR)\*.res"
+	@if exist "$(BIN_DIR)\*.o"   del /Q "$(BIN_DIR)\*.o"
 
-# Build protocol unit tests (pure logic, no USB/network)
-$(TEST_BIN): dirs
-	$(CC) $(CFLAGS) /Fe:$(TEST_BIN) $(COMMON_DIR)\protocol.c tests\test_protocol.c $(LDFLAGS)
-	@echo Tests built: $(TEST_BIN)
-
-# Install (copy to system path)
-install: all
-	@echo Install not implemented. Copy binaries manually from $(BIN_DIR)
-
-# Help
 help:
-	@echo USB Over Network - Build System
+	@echo USB Over Network - Build System (MinGW-w64)
 	@echo.
 	@echo Targets:
-	@echo   all         - Build all (CLI + GUI) [default]
-	@echo   cli         - Build CLI applications only
-	@echo   gui         - Build GUI applications only
-	@echo   test        - Build protocol unit tests
-	@echo   server      - Build CLI server only
-	@echo   client      - Build CLI client only
-	@echo   server-gui  - Build GUI server only
-	@echo   client-gui  - Build GUI client only
-	@echo   clean       - Remove build artifacts
-	@echo   help        - Show this help
+	@echo   make            build CLI + GUI
+	@echo   make cli        build CLI server + client
+	@echo   make gui        build GUI server + client (with manifest)
+	@echo   make test       build and run protocol tests
+	@echo   make clean      remove build output
 	@echo.
-	@echo Usage:
-	@echo   nmake              - Build all
-	@echo   nmake cli          - Build CLI apps
-	@echo   nmake gui          - Build GUI apps
-	@echo   nmake server-gui   - Build GUI server
-	@echo   nmake clean        - Clean
+	@echo Override the compiler with CC=... (default: gcc).
 
-.PHONY: all dirs cli gui test server client server-gui client-gui clean install help

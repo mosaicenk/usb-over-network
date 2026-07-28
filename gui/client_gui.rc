@@ -1,10 +1,6 @@
 /* USB Over Network Client - Resource Script */
-
 #include <windows.h>
 #include "resource.h"
-
-/* Application Icon */
-IDI_APP_ICON ICON "app.ico"
 
 /* Version Information */
 VS_VERSION_INFO VERSIONINFO
@@ -20,11 +16,11 @@ BEGIN
     BEGIN
         BLOCK "040904B0"
         BEGIN
-            VALUE "CompanyName", "USB Over Network"
+            VALUE "CompanyName", "CTK Technologies"
             VALUE "FileDescription", "USB Over Network Client"
             VALUE "FileVersion", "1.0.0.0"
             VALUE "InternalName", "usb-client-gui"
-            VALUE "LegalCopyright", "Educational Use"
+            VALUE "LegalCopyright", "MIT License (c) 2025 CTK Technologies"
             VALUE "OriginalFilename", "usb-client-gui.exe"
             VALUE "ProductName", "USB Over Network"
             VALUE "ProductVersion", "1.0.0.0"
@@ -36,5 +32,6 @@ BEGIN
     END
 END
 
-/* Application Manifest for Visual Styles */
+/* Application Manifest: visual styles, DPI awareness, requireAdministrator. */
 1 RT_MANIFEST "app.manifest"
+

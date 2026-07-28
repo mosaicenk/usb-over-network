@@ -1,11 +1,8 @@
-# Build output
+# Build output (MinGW-w64)
 *.o
-*.obj
 bin/*.exe
+bin/*.o
 bin/*.res
-bin/*.pdb
-bin/*.ilk
-bin/*.exp
 
 # IDE / Editor
 .vs/
