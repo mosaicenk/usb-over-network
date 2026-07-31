@@ -198,6 +198,33 @@ void gui_wide_to_utf8(const wchar_t *wide, char *utf8, int utf8Len) {
     WideCharToMultiByte(CP_UTF8, 0, wide, -1, utf8, utf8Len, NULL, NULL);
 }
 
+/* ----- Layout helpers ----- */
+
+void gui_get_client_size(HWND hWnd, int *w_out, int *h_out) {
+    RECT rc;
+    GetClientRect(hWnd, &rc);
+    if (w_out) *w_out = (int)rc.right;
+    if (h_out) *h_out = (int)rc.bottom;
+}
+
+void gui_move(HWND hWnd, int x, int y, int w, int h, bool redraw) {
+    MoveWindow(hWnd, x, y, w, h, redraw ? TRUE : FALSE);
+}
+
+int gui_scale_dpi(int pixels) {
+    /* Per-monitor V2 awareness is declared in the manifest; GetDpiForWindow
+     * (Win10 1607+) gives the correct scale for the owning window. Fall back
+     * to the system DPI if the function is unavailable. */
+    static int system_dpi = 0;
+    if (system_dpi == 0) {
+        HDC dc = GetDC(NULL);
+        system_dpi = GetDeviceCaps(dc, LOGPIXELSY);
+        ReleaseDC(NULL, dc);
+        if (system_dpi == 0) system_dpi = 96;
+    }
+    return MulDiv(pixels, system_dpi, 96);
+}
+
 /* ----- Status Bar ----- */
 
 void gui_statusbar_set_text(HWND hStatus, const wchar_t *text) {

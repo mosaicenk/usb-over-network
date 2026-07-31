@@ -108,4 +108,17 @@ void gui_wide_to_utf8(const wchar_t *wide, char *utf8, int utf8Len);
 /* Status bar */
 void gui_statusbar_set_text(HWND hStatus, const wchar_t *text);
 
+/* ----- Layout helpers (added to fix overlap/clipping on resize) ----- */
+
+/* Read the client area size of a window into w_out/h_out (either may be NULL). */
+void gui_get_client_size(HWND hWnd, int *w_out, int *h_out);
+
+/* Reposition a control within the parent. Thin wrapper over MoveWindow that
+ * also redraws; redraw=true skips the invalidate for batch updates. */
+void gui_move(HWND hWnd, int x, int y, int w, int h, bool redraw);
+
+/* DPI-aware scale of dialog units: convert "design pixels at 96 DPI" to the
+ * current DPI. Use for any fixed dimension so 150%/200% stays readable. */
+int gui_scale_dpi(int pixels);
+
 #endif /* GUI_COMMON_H */

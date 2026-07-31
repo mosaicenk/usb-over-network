@@ -31,6 +31,7 @@ static void gui_lv_get_item_text(HWND hList, int row, int col, wchar_t *buf, int
 /* Forward declarations */
 static LRESULT CALLBACK ClientWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static void create_device_columns(HWND hList);
+static void gui_layout_client(client_gui_context_t *ctx);
 static void populate_device_list(client_gui_context_t *ctx);
 static DWORD WINAPI discovery_thread_func(LPVOID param);
 
@@ -137,6 +138,66 @@ static void create_client_controls(client_gui_context_t *ctx) {
 
     /* Disable buttons initially */
     EnableWindow(ctx->hBtnRefresh, FALSE);
+}
+
+/* Recompute control rectangles from the current client size.
+ * Called on init and WM_SIZE so controls never overlap or clip. */
+static void gui_layout_client(client_gui_context_t *ctx) {
+    HWND hWnd = ctx->base.hMainWnd;
+    int cw, ch;
+    gui_get_client_size(hWnd, &cw, &ch);
+
+    RECT sbrc;
+    GetWindowRect(ctx->base.hStatusBar, &sbrc);
+    int status_h = sbrc.bottom - sbrc.top;
+    int bottom = ch - status_h;
+    int margin = gui_scale_dpi(MARGIN);
+    int pad = gui_scale_dpi(PADDING);
+    int lblH = gui_scale_dpi(LABEL_HEIGHT);
+    int editH = gui_scale_dpi(EDIT_HEIGHT);
+    int btnH = gui_scale_dpi(BUTTON_HEIGHT);
+    int btnSmall = gui_scale_dpi(80);
+    int editW = gui_scale_dpi(200);
+    int labelW = gui_scale_dpi(50);
+
+    int y = margin;
+    int row1_x = margin + labelW + pad;
+    int list_w = cw - 2 * margin - gui_scale_dpi(16);
+
+    /* Server row: label + edit + Discover + Connect */
+    gui_move(ctx->hLabelServer, margin, y + (editH - lblH) / 2, labelW, lblH, false);
+    gui_move(ctx->hEditServer, row1_x, y, editW, editH, false);
+    int bx = row1_x + editW + pad;
+    gui_move(ctx->hBtnDiscover, bx, y, btnSmall, btnH, false);
+    bx += btnSmall + pad;
+    gui_move(ctx->hBtnConnect, bx, y, btnSmall, btnH, false);
+    y += editH + margin;
+
+    /* Token row */
+    gui_move(ctx->hLabelToken, margin, y + (editH - lblH) / 2, labelW, lblH, false);
+    gui_move(ctx->hEditToken, row1_x, y, editW, editH, false);
+    y += editH + margin;
+
+    /* Devices label */
+    gui_move(ctx->hLabelDevices, margin, y, cw - 2 * margin, lblH, false);
+    y += lblH + pad;
+
+    /* Device list fills down to the Refresh button. */
+    int btnY = bottom - pad - btnH;
+    int list_h = btnY - pad - y;
+    if (list_h < gui_scale_dpi(80)) list_h = gui_scale_dpi(80);
+    gui_move(ctx->base.hDeviceList, margin, y, list_w, list_h, false);
+
+    /* Refresh button docked above the status bar. */
+    gui_move(ctx->hBtnRefresh, margin, btnY, gui_scale_dpi(BUTTON_WIDTH), btnH, false);
+
+    /* Status bar spans the full width. */
+    SendMessageW(ctx->base.hStatusBar, WM_SIZE, 0, 0);
+
+    /* Columns use the header width so nothing is truncated. */
+    for (int i = 0; i < 4; i++) {
+        ListView_SetColumnWidth(ctx->base.hDeviceList, i, LVSCW_AUTOSIZE_USEHEADER);
+    }
 }
 
 static void create_device_columns(HWND hList) {
@@ -366,6 +427,9 @@ bool client_gui_init(client_gui_context_t *ctx, HINSTANCE hInstance) {
 
     /* Create controls */
     create_client_controls(ctx);
+
+    /* Lay out controls for the initial client size (also redone on WM_SIZE). */
+    gui_layout_client(ctx);
 
     /* Initialize VHCI */
     error_code_t err = vhci_init(&ctx->vhci);
@@ -625,8 +689,12 @@ static LRESULT CALLBACK ClientWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
             break;
 
         case WM_SIZE:
-            /* Resize status bar */
-            SendMessage(ctx->base.hStatusBar, WM_SIZE, 0, 0);
+            /* Reposition all controls to match the new window size; the device
+             * list grows, buttons dock above the status bar. Skip when
+             * minimized to avoid pointless work. */
+            if (wParam != SIZE_MINIMIZED) {
+                gui_layout_client(ctx);
+            }
             break;
 
         case WM_CLOSE:

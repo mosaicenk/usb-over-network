@@ -31,6 +31,7 @@ static void gui_lv_get_item_text(HWND hList, int row, int col, wchar_t *buf, int
 static LRESULT CALLBACK ServerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 static void create_device_columns(HWND hList);
 static void create_client_columns(HWND hList);
+static void gui_layout_server(server_gui_context_t *ctx);
 static void populate_device_list(server_gui_context_t *ctx);
 static void on_device_checkbox_changed(server_gui_context_t *ctx, int index);
 static DWORD WINAPI server_accept_thread(LPVOID param);
@@ -133,6 +134,72 @@ static void create_server_controls(server_gui_context_t *ctx) {
     SendMessage(ctx->base.hClientList, WM_SETFONT, (WPARAM)ctx->base.hFont, TRUE);
     SendMessage(ctx->hBtnRefresh, WM_SETFONT, (WPARAM)ctx->base.hFont, TRUE);
     SendMessage(ctx->hBtnHide, WM_SETFONT, (WPARAM)ctx->base.hFont, TRUE);
+}
+
+/* Recompute control rectangles from the current client size.
+ * Called on WM_CREATE and WM_SIZE so nothing overlaps or clips when the
+ * window is resized or opened at a different DPI. */
+static void gui_layout_server(server_gui_context_t *ctx) {
+    HWND hWnd = ctx->base.hMainWnd;
+    int cw, ch;
+    gui_get_client_size(hWnd, &cw, &ch);
+
+    /* Status bar auto-sizes; query its height. */
+    RECT sbrc;
+    GetWindowRect(ctx->base.hStatusBar, &sbrc);
+    int status_h = sbrc.bottom - sbrc.top;
+    int bottom = ch - status_h;
+    int margin = gui_scale_dpi(MARGIN);
+    int pad = gui_scale_dpi(PADDING);
+    int lblH = gui_scale_dpi(LABEL_HEIGHT);
+    int editH = gui_scale_dpi(EDIT_HEIGHT);
+    int btnH = gui_scale_dpi(BUTTON_HEIGHT);
+    int btnW = gui_scale_dpi(BUTTON_WIDTH);
+
+    int y = margin;
+    int list_w = cw - 2 * margin - gui_scale_dpi(16);
+
+    /* Token row */
+    gui_move(ctx->hLabelToken, margin, y + (editH - lblH) / 2,
+             gui_scale_dpi(80), lblH, false);
+    gui_move(ctx->hEditToken, margin + gui_scale_dpi(85), y,
+             cw - 2 * margin - gui_scale_dpi(85), editH, false);
+    y += editH + margin;
+
+    /* Devices label */
+    gui_move(ctx->hLabelDevices, margin, y, cw - 2 * margin, lblH, false);
+    y += lblH + pad;
+
+    /* Devices list: fixed height band */
+    int dev_list_h = gui_scale_dpi(120);
+    gui_move(ctx->base.hDeviceList, margin, y, list_w, dev_list_h, false);
+    y += dev_list_h + margin;
+
+    /* Clients label */
+    gui_move(ctx->hLabelClients, margin, y, cw - 2 * margin, lblH, false);
+    y += lblH + pad;
+
+    /* Clients list fills until the button row. */
+    int btn_row_h = btnH + pad;
+    int cli_list_h = (bottom - pad) - btn_row_h - y;
+    if (cli_list_h < gui_scale_dpi(60)) cli_list_h = gui_scale_dpi(60);
+    gui_move(ctx->base.hClientList, margin, y, list_w, cli_list_h, false);
+
+    /* Button row pinned above the status bar. */
+    int btnY = bottom - pad - btnH;
+    gui_move(ctx->hBtnRefresh, margin, btnY, btnW, btnH, false);
+    gui_move(ctx->hBtnHide, margin + btnW + pad, btnY, btnW + gui_scale_dpi(10), btnH, false);
+
+    /* Status bar spans the full width. */
+    SendMessageW(ctx->base.hStatusBar, WM_SIZE, 0, 0);
+
+    /* Let columns use the available width instead of fixed pixel sizes. */
+    for (int i = 0; i < 4; i++) {
+        ListView_SetColumnWidth(ctx->base.hDeviceList, i, LVSCW_AUTOSIZE_USEHEADER);
+    }
+    for (int i = 0; i < 3; i++) {
+        ListView_SetColumnWidth(ctx->base.hClientList, i, LVSCW_AUTOSIZE_USEHEADER);
+    }
 }
 
 static void create_device_columns(HWND hList) {
@@ -405,6 +472,9 @@ bool server_gui_init(server_gui_context_t *ctx, HINSTANCE hInstance) {
     /* Create controls */
     create_server_controls(ctx);
 
+    /* Lay out controls for the initial client size (also redone on WM_SIZE). */
+    gui_layout_server(ctx);
+
     /* Create tray menu */
     create_tray_menu(ctx);
 
@@ -638,6 +708,15 @@ static LRESULT CALLBACK ServerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
         case WM_TIMER:
             if (wParam == IDT_REFRESH_TIMER) {
                 server_gui_update_clients(ctx);
+            }
+            break;
+
+        case WM_SIZE:
+            /* Keep controls in sync with the window: listviews fill, buttons
+             * dock above the status bar. Minimizing sends SIZE_MINIMIZED;
+             * skip the work then. */
+            if (wParam != SIZE_MINIMIZED) {
+                gui_layout_server(ctx);
             }
             break;
 
